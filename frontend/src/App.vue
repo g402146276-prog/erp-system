@@ -75,21 +75,31 @@
               <template #title>盘点调整</template>
             </el-menu-item>
 
-            <el-menu-item index="/locations">
-              <el-icon><Grid /></el-icon>
-              <template #title>货位管理</template>
-            </el-menu-item>
+            <el-sub-menu index="/archive-module">
+              <template #title>
+                <el-icon><Folder /></el-icon>
+                <span>基础档案</span>
+              </template>
+              <el-menu-item index="/goods-import">商品档案</el-menu-item>
+              <el-menu-item index="/persons">人员档案</el-menu-item>
+              <el-menu-item index="/suppliers">供应商档案</el-menu-item>
+            </el-sub-menu>
+
+            <el-sub-menu index="/warehouse-module">
+              <template #title>
+                <el-icon><HomeFilled /></el-icon>
+                <span>仓库货位</span>
+              </template>
+              <el-menu-item index="/warehouses">仓库管理</el-menu-item>
+              <el-menu-item index="/locations">货位管理</el-menu-item>
+            </el-sub-menu>
 
             <el-sub-menu index="/system-module">
               <template #title>
                 <el-icon><Setting /></el-icon>
-                <span>系统管理</span>
+                <span>系统设置</span>
               </template>
-              <el-menu-item index="/warehouses">仓库管理</el-menu-item>
               <el-menu-item index="/approval-rules">审批规则</el-menu-item>
-              <el-menu-item index="/goods-import">商品档案</el-menu-item>
-              <el-menu-item index="/persons">人员档案</el-menu-item>
-              <el-menu-item index="/suppliers">供应商档案</el-menu-item>
             </el-sub-menu>
           </el-menu>
         </el-aside>
@@ -151,7 +161,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   HomeFilled, Camera, Box, TakeawayBox, RefreshRight, Coin,
   EditPen, Grid, DataAnalysis, Setting, Expand, Fold,
-  ArrowDown, User, SwitchButton
+  ArrowDown, User, SwitchButton, Folder
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -175,12 +185,12 @@ const menuMap = {
   '/stock': { module: '库存查询', page: '库存查询' },
   '/reconciliation': { module: '库存查询', page: '对账看板' },
   '/adjustment-list': { module: '库存管理', page: '盘点调整' },
-  '/locations': { module: '仓库管理', page: '货位管理' },
-  '/warehouses': { module: '系统管理', page: '仓库管理' },
-  '/approval-rules': { module: '系统管理', page: '审批规则' },
-  '/goods-import': { module: '系统管理', page: '商品档案' },
-  '/persons': { module: '系统管理', page: '人员档案' },
-  '/suppliers': { module: '系统管理', page: '供应商档案' },
+  '/locations': { module: '仓库货位', page: '货位管理' },
+  '/warehouses': { module: '仓库货位', page: '仓库管理' },
+  '/approval-rules': { module: '系统设置', page: '审批规则' },
+  '/goods-import': { module: '基础档案', page: '商品档案' },
+  '/persons': { module: '基础档案', page: '人员档案' },
+  '/suppliers': { module: '基础档案', page: '供应商档案' },
   '/goods-detail/:id': { module: '库存查询', page: '商品详情' },
   '/quick-adjust': { module: '库存管理', page: '快速盘点' }
 }
@@ -209,7 +219,9 @@ const activeMenu = computed(() => {
   if (path.startsWith('/transfer')) return '/transfer-module'
   if (path.startsWith('/goods-detail/')) return '/stock'
   if (path.startsWith('/quick-adjust')) return '/adjustment-list'
-  if (path.startsWith('/approval') || path.startsWith('/goods') || path.startsWith('/person') || path.startsWith('/supplier')) return '/system-module'
+  if (path.startsWith('/goods') || path.startsWith('/person') || path.startsWith('/supplier')) return '/archive-module'
+  if (path.startsWith('/warehouse') || path.startsWith('/location')) return '/warehouse-module'
+  if (path.startsWith('/approval')) return '/system-module'
   return '/'
 })
 
