@@ -4,7 +4,7 @@
       <template #header>
         <div class="card-header">
           <span>人员档案管理</span>
-          <el-button type="primary" size="small" @click="showAddDialog = true">
+          <el-button type="primary" size="small" @click="addPerson">
             <el-icon><plus /></el-icon>
             添加人员
           </el-button>
@@ -109,6 +109,7 @@ const loading = ref(false)
 const persons = ref([])
 const showAddDialog = ref(false)
 const isEdit = ref(false)
+const editId = ref(null)
 
 const searchForm = reactive({
   keyword: '',
@@ -131,7 +132,11 @@ const loadPersons = async () => {
     const params = {
       keyword: searchForm.keyword || undefined,
       person_type: searchForm.person_type || undefined,
-      is_active: searchForm.is_active === '' ? undefined : searchForm.is_active === 'true'
+    }
+    if (searchForm.is_active === '' || searchForm.is_active === undefined) {
+      params.is_active = undefined
+    } else {
+      params.is_active = searchForm.is_active
     }
     persons.value = await personApi.list(params)
   } catch (error) {
@@ -150,6 +155,7 @@ const resetSearch = () => {
 
 const addPerson = () => {
   isEdit.value = false
+  editId.value = null
   form.code = ''
   form.name = ''
   form.person_type = 'sales'
@@ -161,6 +167,7 @@ const addPerson = () => {
 
 const editPerson = (row) => {
   isEdit.value = true
+  editId.value = row.id
   form.code = row.code
   form.name = row.name
   form.person_type = row.person_type
@@ -175,10 +182,10 @@ const savePerson = async () => {
     ElMessage.error('请填写必填字段')
     return
   }
-  
+
   try {
     if (isEdit.value) {
-      await personApi.update(persons.value.find(p => p.code === form.code).id, {
+      await personApi.update(editId.value, {
         name: form.name,
         person_type: form.person_type,
         department: form.department,
@@ -187,7 +194,7 @@ const savePerson = async () => {
       })
       ElMessage.success('修改成功')
     } else {
-      await personApi.create(form)
+      await personApi.create({ ...form })
       ElMessage.success('添加成功')
     }
     showAddDialog.value = false
@@ -210,12 +217,13 @@ const deletePerson = async (row) => {
 }
 
 const toggleStatus = async (row) => {
+  const original = row.is_active
   try {
-    await personApi.update(row.id, { is_active: !row.is_active })
-    row.is_active = !row.is_active
+    await personApi.update(row.id, { is_active: !original })
+    row.is_active = !original
     ElMessage.success('状态已更新')
   } catch (error) {
-    row.is_active = !row.is_active
+    row.is_active = original
     ElMessage.error('更新失败')
   }
 }

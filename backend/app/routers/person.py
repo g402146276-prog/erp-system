@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from sqlalchemy.exc import IntegrityError
+from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel
 from app.database import get_db
@@ -32,12 +33,12 @@ class PersonResponse(BaseModel):
     code: str
     name: str
     person_type: str
-    department: str = None
-    phone: str = None
+    department: Optional[str] = None
+    phone: Optional[str] = None
     is_active: bool
-    remark: str = None
-    created_at: datetime = None
-    updated_at: datetime = None
+    remark: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -76,10 +77,14 @@ def create_person(person: PersonCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="人员编码已存在")
     
-    db_person = Person(**person.dict())
+    db_person = Person(**person.model_dump())
     db.add(db_person)
-    db.commit()
-    db.refresh(db_person)
+    try:
+        db.commit()
+        db.refresh(db_person)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="人员编码已存在")
     return db_person
 
 
@@ -89,7 +94,7 @@ def update_person(person_id: int, person: PersonUpdate, db: Session = Depends(ge
     if not db_person:
         raise HTTPException(status_code=404, detail="人员不存在")
     
-    update_data = person.dict(exclude_unset=True)
+    update_data = person.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(db_person, key, value)
     

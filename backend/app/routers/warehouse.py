@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel
 from app.database import get_db
 from app.models.warehouse import Warehouse
+from app.models.stock import Stock
+from app.routers.auth import get_current_user
+from app.models.user import User
 
 router = APIRouter(prefix="/api/warehouses", tags=["仓库管理"])
 
@@ -31,8 +34,8 @@ class WarehouseResponse(BaseModel):
     warehouse_type: str
     parent_id: int
     is_active: bool
-    remark: str = None
-    created_at: datetime = None
+    remark: Optional[str] = None
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -84,10 +87,29 @@ def update_warehouse(warehouse_id: int, warehouse_data: WarehouseUpdate, db: Ses
 
 
 @router.delete("/{warehouse_id}")
-def delete_warehouse(warehouse_id: int, db: Session = Depends(get_db)):
+def delete_warehouse(
+    warehouse_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if user.role not in ("admin",):
+        raise HTTPException(status_code=403, detail="仅管理员可删除仓库")
+
     warehouse = db.query(Warehouse).filter(Warehouse.id == warehouse_id).first()
     if not warehouse:
         raise HTTPException(status_code=404, detail="仓库不存在")
+
+    # 检查该仓库及所有虚拟子仓是否有库存
+    warehouse_ids = [warehouse_id]
+    sub_ids = db.query(Warehouse.id).filter(
+        Warehouse.parent_id == warehouse_id,
+        Warehouse.warehouse_type != "entity",
+    ).all()
+    warehouse_ids.extend([r[0] for r in sub_ids])
+
+    has_stock = db.query(Stock).filter(Stock.warehouse_id.in_(warehouse_ids)).first()
+    if has_stock:
+        raise HTTPException(status_code=400, detail="该仓库或虚拟子仓中存在库存，无法删除")
 
     db.delete(warehouse)
     db.commit()

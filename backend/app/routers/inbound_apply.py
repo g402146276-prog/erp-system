@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 import json
@@ -32,16 +32,16 @@ class InboundApplyResponse(BaseModel):
     apply_no: str
     apply_type: str
     applicant_id: int
-    customer_name: str = None
-    boniu_order_no: str = None
+    customer_name: Optional[str] = None
+    boniu_order_no: Optional[str] = None
     boniu_order_status: str
-    goods_details: str = None
-    expect_date: str = None
+    goods_details: Optional[str] = None
+    expect_date: Optional[str] = None
     status: str
     arrived_quantity: int
     total_quantity: int
-    remark: str = None
-    created_at: datetime = None
+    remark: Optional[str] = None
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -73,7 +73,12 @@ def get_inbound_apply(apply_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=InboundApplyResponse)
 def create_inbound_apply(apply_data: InboundApplyCreate, db: Session = Depends(get_db)):
-    goods_details_json = json.loads(apply_data.goods_details) if isinstance(apply_data.goods_details, str) else apply_data.goods_details
+    try:
+        goods_details_json = json.loads(apply_data.goods_details) if isinstance(apply_data.goods_details, str) else apply_data.goods_details
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"商品明细JSON格式错误: {str(e)}")
+    if not isinstance(goods_details_json, list):
+        raise HTTPException(status_code=400, detail="商品明细必须是数组格式")
     total_quantity = sum(item.get("quantity", 0) for item in goods_details_json)
 
     apply = InboundApply(

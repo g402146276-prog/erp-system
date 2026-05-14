@@ -30,9 +30,9 @@
     </el-table>
 
     <el-dialog v-model="showDialog" :title="editId?'编辑仓库':'新建仓库'" width="500px">
-      <el-form :model="form" label-width="100px">
-        <el-form-item label="仓库编码"><el-input v-model="form.code" :disabled="!!editId" /></el-form-item>
-        <el-form-item label="仓库名称"><el-input v-model="form.name" /></el-form-item>
+      <el-form :model="form" :rules="formRules" ref="formRef" label-width="100px">
+        <el-form-item label="仓库编码" prop="code"><el-input v-model="form.code" :disabled="!!editId" /></el-form-item>
+        <el-form-item label="仓库名称" prop="name"><el-input v-model="form.name" /></el-form-item>
         <el-form-item label="仓库类型">
           <el-select v-model="form.warehouse_type" style="width:100%">
             <el-option label="实体仓" value="entity" />
@@ -63,6 +63,11 @@ const list = ref([])
 const loading = ref(false)
 const showDialog = ref(false)
 const editId = ref(null)
+const formRef = ref(null)
+const formRules = {
+  code: [{ required: true, message: '请输入仓库编码', trigger: 'blur' }],
+  name: [{ required: true, message: '请输入仓库名称', trigger: 'blur' }]
+}
 const form = ref({ code: '', name: '', warehouse_type: 'entity', is_active: true, remark: '' })
 
 async function load() {
@@ -76,6 +81,13 @@ async function load() {
 function openAdd() {
   editId.value = null
   form.value = { code: '', name: '', warehouse_type: 'entity', is_active: true, remark: '' }
+  // 自动生成编码 WH001, WH002 ...
+  let maxNum = 0
+  list.value.forEach(w => {
+    const m = (w.code || '').match(/WH(\d+)$/i)
+    if (m) maxNum = Math.max(maxNum, parseInt(m[1]))
+  })
+  form.value.code = 'WH' + String(maxNum + 1).padStart(3, '0')
   showDialog.value = true
 }
 
@@ -86,10 +98,9 @@ function openEdit(row) {
 }
 
 async function save() {
-  if (!form.value.code || !form.value.name) {
-    ElMessage.warning('编码和名称为必填')
-    return
-  }
+  if (!formRef.value) return
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
   try {
     if (editId.value) {
       await warehouseApi.update(editId.value, form.value)
@@ -101,7 +112,8 @@ async function save() {
     showDialog.value = false
     await load()
   } catch (e) {
-    ElMessage.error('保存失败')
+    const detail = e?.response?.data?.detail || e?.message || '保存失败'
+    ElMessage.error(detail)
   }
 }
 
@@ -111,7 +123,12 @@ async function del(row) {
     await warehouseApi.delete(row.id)
     ElMessage.success('已删除')
     await load()
-  } catch {}
+  } catch (e) {
+    if (e !== 'cancel') {
+      const detail = e?.response?.data?.detail || e?.message || '删除失败'
+      ElMessage.error(detail)
+    }
+  }
 }
 
 onMounted(load)

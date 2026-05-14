@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import update as sa_update
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
@@ -58,16 +59,16 @@ def create_outbound(
     """创建出库单，扣减库存"""
     outbound_no = generate_outbound_no(db)
 
-    # 检查库存
-    stock = db.query(Stock).filter(
-        Stock.warehouse_id == data.warehouse_id,
-        Stock.goods_id == data.goods_id,
-    ).first()
-    if not stock or stock.quantity < data.quantity:
+    # 原子化扣减库存：在同一个 SQL 语句中检查并扣减
+    result = db.execute(
+        sa_update(Stock)
+        .where(Stock.warehouse_id == data.warehouse_id)
+        .where(Stock.goods_id == data.goods_id)
+        .where(Stock.quantity >= data.quantity)
+        .values(quantity=Stock.quantity - data.quantity)
+    )
+    if result.rowcount == 0:
         raise HTTPException(status_code=400, detail="库存不足")
-
-    # 扣减库存
-    stock.quantity -= data.quantity
 
     order = OutboundOrder(
         outbound_no=outbound_no,

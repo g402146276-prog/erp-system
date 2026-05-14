@@ -72,11 +72,11 @@ def create_location(
     user: User = Depends(get_current_user),
 ):
     existing = db.query(StorageLocation).filter(
-        StorageLocation.warehouse_id == req.warehouse_id,
         StorageLocation.code == req.code,
     ).first()
     if existing:
-        raise HTTPException(status_code=400, detail="该仓库下货位编码已存在")
+        wh_name = db.query(Warehouse.name).filter(Warehouse.id == existing.warehouse_id).scalar() or f"ID={existing.warehouse_id}"
+        raise HTTPException(status_code=400, detail=f"编码「{req.code}」已被【{wh_name}】使用")
 
     loc = StorageLocation(warehouse_id=req.warehouse_id, code=req.code, name=req.name)
     db.add(loc)

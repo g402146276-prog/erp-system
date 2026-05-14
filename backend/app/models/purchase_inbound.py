@@ -9,6 +9,7 @@ class PurchaseInbound(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     bojun_order_no = Column(String(50), nullable=False, index=True)
+    warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=False, comment="入库仓库")
     goods_id = Column(Integer, ForeignKey("goods.id"), nullable=False)
     received_quantity = Column(Integer, nullable=False)
     operator = Column(String(50), nullable=True)

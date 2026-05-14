@@ -4,7 +4,7 @@
       <template #header>
         <div class="card-header">
           <span>供应商档案管理</span>
-          <el-button type="primary" size="small" @click="showAddDialog = true">
+          <el-button type="primary" size="small" @click="addSupplier">
             <el-icon><plus /></el-icon>
             添加供应商
           </el-button>
@@ -133,6 +133,7 @@ const loading = ref(false)
 const suppliers = ref([])
 const showAddDialog = ref(false)
 const isEdit = ref(false)
+const editId = ref(null)
 
 const searchForm = reactive({
   keyword: '',
@@ -158,7 +159,11 @@ const loadSuppliers = async () => {
   try {
     const params = {
       keyword: searchForm.keyword || undefined,
-      is_active: searchForm.is_active === '' ? undefined : searchForm.is_active === 'true'
+    }
+    if (searchForm.is_active === '' || searchForm.is_active === undefined) {
+      params.is_active = undefined
+    } else {
+      params.is_active = searchForm.is_active
     }
     suppliers.value = await supplierApi.list(params)
   } catch (error) {
@@ -176,6 +181,7 @@ const resetSearch = () => {
 
 const addSupplier = () => {
   isEdit.value = false
+  editId.value = null
   form.code = ''
   form.name = ''
   form.short_name = ''
@@ -192,6 +198,7 @@ const addSupplier = () => {
 
 const editSupplier = (row) => {
   isEdit.value = true
+  editId.value = row.id
   form.code = row.code
   form.name = row.name
   form.short_name = row.short_name || ''
@@ -211,10 +218,10 @@ const saveSupplier = async () => {
     ElMessage.error('请填写必填字段')
     return
   }
-  
+
   try {
     if (isEdit.value) {
-      await supplierApi.update(suppliers.value.find(s => s.code === form.code).id, {
+      await supplierApi.update(editId.value, {
         name: form.name,
         short_name: form.short_name,
         contact: form.contact,
@@ -228,7 +235,7 @@ const saveSupplier = async () => {
       })
       ElMessage.success('修改成功')
     } else {
-      await supplierApi.create(form)
+      await supplierApi.create({ ...form })
       ElMessage.success('添加成功')
     }
     showAddDialog.value = false
@@ -251,12 +258,13 @@ const deleteSupplier = async (row) => {
 }
 
 const toggleStatus = async (row) => {
+  const original = row.is_active
   try {
-    await supplierApi.update(row.id, { is_active: !row.is_active })
-    row.is_active = !row.is_active
+    await supplierApi.update(row.id, { is_active: !original })
+    row.is_active = !original
     ElMessage.success('状态已更新')
   } catch (error) {
-    row.is_active = !row.is_active
+    row.is_active = original
     ElMessage.error('更新失败')
   }
 }

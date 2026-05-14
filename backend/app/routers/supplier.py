@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from sqlalchemy.exc import IntegrityError
+from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel
 from app.database import get_db
@@ -41,18 +42,18 @@ class SupplierResponse(BaseModel):
     id: int
     code: str
     name: str
-    short_name: str = None
-    contact: str = None
-    phone: str = None
-    mobile: str = None
-    email: str = None
-    address: str = None
-    bank_info: str = None
-    tax_no: str = None
+    short_name: Optional[str] = None
+    contact: Optional[str] = None
+    phone: Optional[str] = None
+    mobile: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    bank_info: Optional[str] = None
+    tax_no: Optional[str] = None
     is_active: bool
-    remark: str = None
-    created_at: datetime = None
-    updated_at: datetime = None
+    remark: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -88,10 +89,14 @@ def create_supplier(supplier: SupplierCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="供应商编码已存在")
     
-    db_supplier = Supplier(**supplier.dict())
+    db_supplier = Supplier(**supplier.model_dump())
     db.add(db_supplier)
-    db.commit()
-    db.refresh(db_supplier)
+    try:
+        db.commit()
+        db.refresh(db_supplier)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="供应商编码已存在")
     return db_supplier
 
 
@@ -101,7 +106,7 @@ def update_supplier(supplier_id: int, supplier: SupplierUpdate, db: Session = De
     if not db_supplier:
         raise HTTPException(status_code=404, detail="供应商不存在")
     
-    update_data = supplier.dict(exclude_unset=True)
+    update_data = supplier.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(db_supplier, key, value)
     

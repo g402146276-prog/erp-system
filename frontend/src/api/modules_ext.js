@@ -48,6 +48,7 @@ export const approvalRuleApi = {
 export const purchaseInboundApi = {
   list: (params) => api.get('/purchase-inbound/', { params }),
   create: (data) => api.post('/purchase-inbound/', data),
+  batchCreate: (data) => api.post('/purchase-inbound/batch', data),
   summary: (params) => api.get('/purchase-inbound/summary', { params }),
 }
 
@@ -56,6 +57,7 @@ export const intransitOrderApi = {
   list: (params) => api.get('/intransit-orders/', { params }),
   get: (id) => api.get(`/intransit-orders/${id}`),
   create: (data) => api.post('/intransit-orders/', data),
+  complete: (id) => api.put(`/intransit-orders/${id}/complete`),
   cancel: (id) => api.put(`/intransit-orders/${id}/cancel`),
   linkTransfer: (orderId, transferApplyId) => api.post(`/intransit-orders/${orderId}/transfer`, null, { params: { transfer_apply_id: transferApplyId } }),
   linkOutbound: (orderId, outboundId) => api.post(`/intransit-orders/${orderId}/outbound`, null, { params: { outbound_id: outboundId } }),

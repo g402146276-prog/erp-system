@@ -4,7 +4,7 @@
       <h2>在途订单</h2>
       <el-button type="primary" @click="showCreate=true">新建在途订单</el-button>
     </div>
-    <el-alert title="记录直发客户/跨店调拨的途中货物，创建即入库（算实物库存），后续关联调拨→出库完成链路。" type="warning" :closable="false" show-icon style="margin:12px 0" />
+    <el-alert title="记录直发客户/跨店调拨的途中货物，纯记录不动库存。确认到货后可到采购入库单导入生成正式入库。" type="info" :closable="false" show-icon style="margin:12px 0" />
     <el-tabs v-model="tab">
       <el-tab-pane label="待处理" name="pending" />
       <el-tab-pane label="已完成" name="completed" />
@@ -28,8 +28,9 @@
         </template>
       </el-table-column>
       <el-table-column prop="created_at" label="时间" width="160" />
-      <el-table-column label="操作" width="120" fixed="right">
+      <el-table-column label="操作" width="160" fixed="right">
         <template #default="{row}">
+          <el-button v-if="row.status==='pending'" size="small" type="primary" @click="completeOrder(row)">完成</el-button>
           <el-button v-if="row.status==='pending'" size="small" type="danger" @click="cancel(row)">作废</el-button>
           <span v-else>-</span>
         </template>
@@ -116,6 +117,11 @@ async function createOrder() {
   barcode.value = ''
   goodsName.value = ''
   goodsId.value = null
+  await load()
+}
+
+async function completeOrder(row) {
+  await intransitOrderApi.complete(row.id)
   await load()
 }
 

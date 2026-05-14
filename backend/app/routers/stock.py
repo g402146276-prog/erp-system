@@ -23,9 +23,9 @@ class StockResponse(BaseModel):
     warehouse_id: int
     goods_id: int
     quantity: int
-    warehouse_name: str = None
-    goods_name: str = None
-    goods_barcode: str = None
+    warehouse_name: Optional[str] = None
+    goods_name: Optional[str] = None
+    goods_barcode: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -35,56 +35,73 @@ class StockQueryResponse(BaseModel):
     goods_id: int
     barcode: str
     name: str
-    spec: str = None
+    spec: Optional[str] = None
     total_quantity: int
     warehouse_stocks: List[dict]
 
 
 @router.get("/", response_model=List[StockResponse])
 def list_stocks(skip: int = 0, limit: int = 100, warehouse_id: int = None, goods_id: int = None, db: Session = Depends(get_db)):
-    query = db.query(Stock)
+    query = db.query(
+        Stock,
+        Warehouse.name.label("warehouse_name"),
+        Goods.name.label("goods_name"),
+        Goods.barcode.label("goods_barcode"),
+    ).outerjoin(Warehouse, Stock.warehouse_id == Warehouse.id
+    ).outerjoin(Goods, Stock.goods_id == Goods.id)
     if warehouse_id:
         query = query.filter(Stock.warehouse_id == warehouse_id)
     if goods_id:
         query = query.filter(Stock.goods_id == goods_id)
-    stocks = query.offset(skip).limit(limit).all()
-    return stocks
+    rows = query.order_by(Stock.id.desc()).offset(skip).limit(limit).all()
+    result = []
+    for stock, warehouse_name, goods_name, goods_barcode in rows:
+        result.append(StockResponse(
+            id=stock.id,
+            warehouse_id=stock.warehouse_id,
+            goods_id=stock.goods_id,
+            quantity=stock.quantity,
+            warehouse_name=warehouse_name or "",
+            goods_name=goods_name or "",
+            goods_barcode=goods_barcode or "",
+        ))
+    return result
 
 
 @router.get("/query", response_model=List[StockQueryResponse])
 def query_stock_summary(goods_name: str = None, barcode: str = None, db: Session = Depends(get_db)):
-    query = db.query(Stock)
+    query = db.query(
+        Stock,
+        Goods.name.label("goods_name"),
+        Goods.barcode.label("goods_barcode"),
+        Goods.spec.label("goods_spec"),
+        Warehouse.name.label("warehouse_name"),
+    ).join(Goods, Stock.goods_id == Goods.id
+    ).outerjoin(Warehouse, Stock.warehouse_id == Warehouse.id)
 
-    stocks = query.all()
-    result = []
+    if goods_name:
+        query = query.filter(Goods.name.like(f"%{goods_name}%"))
+    if barcode:
+        query = query.filter(Goods.barcode.like(f"%{barcode}%"))
 
+    rows = query.all()
     goods_map = {}
-    for stock in stocks:
+    for stock, g_name, g_barcode, g_spec, wh_name in rows:
         if stock.goods_id not in goods_map:
-            goods = db.query(Goods).filter(Goods.id == stock.goods_id).first()
-            if not goods:
-                continue
-            if goods_name and goods_name not in goods.name:
-                continue
-            if barcode and barcode not in goods.barcode:
-                continue
             goods_map[stock.goods_id] = {
-                "goods_id": goods.id,
-                "barcode": goods.barcode,
-                "name": goods.name,
-                "spec": goods.spec,
+                "goods_id": stock.goods_id,
+                "barcode": g_barcode,
+                "name": g_name,
+                "spec": g_spec,
                 "total_quantity": 0,
-                "warehouse_stocks": []
+                "warehouse_stocks": [],
             }
-
-        warehouse = db.query(Warehouse).filter(Warehouse.id == stock.warehouse_id).first()
-        warehouse_name = warehouse.name if warehouse else "未知仓库"
 
         goods_map[stock.goods_id]["total_quantity"] += stock.quantity
         goods_map[stock.goods_id]["warehouse_stocks"].append({
             "warehouse_id": stock.warehouse_id,
-            "warehouse_name": warehouse_name,
-            "quantity": stock.quantity
+            "warehouse_name": wh_name or "未知仓库",
+            "quantity": stock.quantity,
         })
 
     return list(goods_map.values())

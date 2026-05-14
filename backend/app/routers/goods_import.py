@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 import csv
@@ -19,10 +19,10 @@ class ImportResponse(BaseModel):
     success_count: int
     fail_count: int
     status: str
-    error_message: str = None
-    operator: str = None
-    created_at: datetime = None
-    completed_at: datetime = None
+    error_message: Optional[str] = None
+    operator: Optional[str] = None
+    created_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -60,7 +60,7 @@ async def upload_goods_file(
 ):
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="只支持CSV文件")
-    
+
     # 创建导入记录
     record = GoodsImportRecord(
         file_name=file.filename,
@@ -70,7 +70,7 @@ async def upload_goods_file(
     db.add(record)
     db.commit()
     db.refresh(record)
-    
+
     try:
         # 读取CSV文件（自动识别编码）
         contents = await file.read()
@@ -80,12 +80,13 @@ async def upload_goods_file(
             raw = contents.decode('gbk', errors='replace')
         csv_file = io.StringIO(raw)
         reader = csv.DictReader(csv_file)
-        
+
         total_count = 0
         success_count = 0
         fail_count = 0
         errors = []
-        
+        seen_barcodes = set()  # 跟踪本次CSV内已出现的条码
+
         for row in reader:
             total_count += 1
             try:
@@ -96,12 +97,19 @@ async def upload_goods_file(
                 category = row.get('category') or row.get('分类', '')
                 price = row.get('price') or row.get('单价', 0)
                 remark = row.get('remark') or row.get('备注', '')
-                
+
                 if not barcode or not name:
                     fail_count += 1
                     errors.append(f"第{total_count}行: 条码和名称不能为空")
                     continue
-                
+
+                # 检查CSV内重复条码
+                if barcode in seen_barcodes:
+                    fail_count += 1
+                    errors.append(f"第{total_count}行: 条码'{barcode}'在文件中重复")
+                    continue
+                seen_barcodes.add(barcode)
+
                 existing = db.query(Goods).filter(Goods.barcode == barcode).first()
                 if existing:
                     existing.name = name
@@ -121,25 +129,23 @@ async def upload_goods_file(
                         remark=remark
                     )
                     db.add(goods)
-                
+
                 success_count += 1
-                
+
             except Exception as e:
                 fail_count += 1
                 errors.append(f"第{total_count}行: {str(e)}")
-        
-        db.commit()
-        
-        # 更新导入记录
+
+        # 更新导入记录（与商品变更在同一事务中提交）
         record.total_count = total_count
         record.success_count = success_count
         record.fail_count = fail_count
-        record.status = "completed" if fail_count == 0 else "failed"
+        record.status = "completed" if fail_count == 0 else "partial"
         record.error_message = "\n".join(errors) if errors else None
         record.completed_at = datetime.now()
         db.commit()
         db.refresh(record)
-        
+
         return {
             "message": "导入完成",
             "record_id": record.id,
@@ -147,12 +153,15 @@ async def upload_goods_file(
             "success": success_count,
             "fail": fail_count
         }
-        
+
     except Exception as e:
-        record.status = "failed"
-        record.error_message = str(e)
-        record.completed_at = datetime.now()
-        db.commit()
+        db.rollback()  # 先回滚损坏的事务
+        record = db.query(GoodsImportRecord).filter(GoodsImportRecord.id == record.id).first()
+        if record:
+            record.status = "failed"
+            record.error_message = str(e)
+            record.completed_at = datetime.now()
+            db.commit()
         raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
 
 

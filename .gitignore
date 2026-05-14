@@ -18,6 +18,13 @@ frontend/dist/
 .env
 .vscode/
 
+# Logs
+*.log
+
+# Local dev scripts
+start_dev.bat
+restart_backend.bat
+
 # OS
 .DS_Store
 Thumbs.db

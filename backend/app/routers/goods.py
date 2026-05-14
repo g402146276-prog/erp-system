@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel
 from app.database import get_db
@@ -33,12 +33,12 @@ class GoodsResponse(BaseModel):
     id: int
     barcode: str
     name: str
-    spec: str = None
+    spec: Optional[str] = None
     unit: str
-    category: str = None
+    category: Optional[str] = None
     price: float
-    remark: str = None
-    created_at: datetime = None
+    remark: Optional[str] = None
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

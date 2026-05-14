@@ -38,9 +38,9 @@
 
     <!-- 添加/编辑对话框 -->
     <el-dialog v-model="showDialog" :title="editId?'编辑商品':'添加商品'" width="500px">
-      <el-form :model="form" label-width="80px">
-        <el-form-item label="条码"><el-input v-model="form.barcode" /></el-form-item>
-        <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
+      <el-form :model="form" :rules="formRules" ref="formRef" label-width="80px">
+        <el-form-item label="条码" prop="barcode"><el-input v-model="form.barcode" :disabled="!!editId" /></el-form-item>
+        <el-form-item label="名称" prop="name"><el-input v-model="form.name" /></el-form-item>
         <el-form-item label="规格"><el-input v-model="form.spec" /></el-form-item>
         <el-form-item label="单位"><el-input v-model="form.unit" /></el-form-item>
         <el-form-item label="分类">
@@ -94,7 +94,12 @@ const keyword = ref('')
 const showDialog = ref(false)
 const showImport = ref(false)
 const editId = ref(null)
+const formRef = ref(null)
 const form = ref({ barcode: '', name: '', spec: '', unit: '个', category: '', price: 0, remark: '' })
+const formRules = {
+  barcode: [{ required: true, message: '请输入条码', trigger: 'blur' }],
+  name: [{ required: true, message: '请输入名称', trigger: 'blur' }]
+}
 const categories = ref([])
 const uploadHeaders = ref({ Authorization: 'Bearer ' + (localStorage.getItem('erp_token') || '') })
 
@@ -127,10 +132,9 @@ function openEdit(row) {
 }
 
 async function save() {
-  if (!form.value.barcode || !form.value.name) {
-    ElMessage.warning('条码和名称为必填')
-    return
-  }
+  if (!formRef.value) return
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
   try {
     if (editId.value) {
       await goodsApi.update(editId.value, form.value)
@@ -142,7 +146,8 @@ async function save() {
     showDialog.value = false
     await load()
   } catch (e) {
-    ElMessage.error('保存失败')
+    const detail = e?.response?.data?.detail || e?.message || '保存失败'
+    ElMessage.error(detail)
   }
 }
 

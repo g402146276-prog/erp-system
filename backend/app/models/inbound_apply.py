@@ -14,7 +14,7 @@ class InboundApply(Base):
     boniu_order_no = Column(String(50), comment="伯俊订单号")
     boniu_order_status = Column(String(20), default="pending", comment="伯俊订单状态: pending=待入库, synced=数据已同步, completed=已完成, cancelled=已取消")
     goods_details = Column(Text, comment="商品明细JSON: [{goods_id, barcode, name, quantity}]")
-    expect_date = Column(DateTime(timezone=True), comment="期望到货日期")
+    expect_date = Column(String(20), comment="期望到货日期")
     status = Column(String(20), default="pending", comment="状态: pending=待入库, part=部分到货, completed=已完成, cancelled=已取消")
     arrived_quantity = Column(Integer, default=0, comment="已到货数量")
     total_quantity = Column(Integer, default=0, comment="总数量")

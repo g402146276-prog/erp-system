@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import Optional
 
 from app.database import get_db
@@ -70,7 +71,7 @@ def gift_reconciliation(goods_id: int, db: Session = Depends(get_db)):
     result = db.query(
         OutboundOrder.goods_id,
         OutboundOrder.bojun_status,
-        db.func.sum(OutboundOrder.quantity).label("total_qty"),
+        func.sum(OutboundOrder.quantity).label("total_qty"),
     ).filter(
         OutboundOrder.order_type == "gift",
         OutboundOrder.goods_id == goods_id,

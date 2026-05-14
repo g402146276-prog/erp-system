@@ -4,7 +4,7 @@ from app.database import Base
 
 
 class IntransitOrder(Base):
-    """在途订单 - 直发客户/跨店调拨，货在途中先记录，参与库存计算"""
+    """在途订单 - 直发客户/跨店调拨，纯记录不动库存，确认后可导入采购入库"""
     __tablename__ = "intransit_orders"
 
     id = Column(Integer, primary_key=True, index=True)

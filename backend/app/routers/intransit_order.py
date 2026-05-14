@@ -8,8 +8,6 @@ from app.database import get_db
 from app.models.intransit_order import IntransitOrder
 from app.models.goods import Goods
 from app.models.warehouse import Warehouse
-from app.models.stock import Stock
-from app.models.inbound import InboundRecord
 from app.models.transfer_apply import TransferApply
 from app.models.outbound_order import OutboundOrder
 from app.models.user import User
@@ -65,34 +63,6 @@ def create_intransit(
         remark=data.remark,
     )
 
-    # 2. 增加库存（在途即算实物库存）
-    stock = db.query(Stock).filter(
-        Stock.warehouse_id == data.warehouse_id,
-        Stock.goods_id == data.goods_id,
-    ).first()
-    if stock:
-        stock.quantity += data.quantity
-    else:
-        stock = Stock(
-            warehouse_id=data.warehouse_id,
-            goods_id=data.goods_id,
-            quantity=data.quantity,
-        )
-        db.add(stock)
-
-    # 3. 创建入库记录
-    inbound_rec = InboundRecord(
-        warehouse_id=data.warehouse_id,
-        goods_id=data.goods_id,
-        quantity=data.quantity,
-        bojun_order_no=data.bojun_order_no,
-        operator=current_user.display_name,
-        remark=f"在途订单[{apply_no}]自动入库",
-    )
-    db.add(inbound_rec)
-    db.flush()
-    order.inbound_record_id = inbound_rec.id
-
     db.add(order)
     db.commit()
     db.refresh(order)
@@ -110,6 +80,9 @@ def link_transfer(
     order = db.query(IntransitOrder).filter(IntransitOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="在途订单不存在")
+    ta = db.query(TransferApply).filter(TransferApply.id == transfer_apply_id).first()
+    if not ta:
+        raise HTTPException(status_code=404, detail="调拨申请单不存在")
     order.transfer_id = transfer_apply_id
     db.commit()
     return {"message": "已关联"}
@@ -126,6 +99,9 @@ def link_outbound(
     order = db.query(IntransitOrder).filter(IntransitOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="在途订单不存在")
+    ob = db.query(OutboundOrder).filter(OutboundOrder.id == outbound_id).first()
+    if not ob:
+        raise HTTPException(status_code=404, detail="出库单不存在")
     order.outbound_id = outbound_id
     order.status = "completed"
     db.commit()
@@ -196,6 +172,19 @@ def get_intransit(order_id: int, db: Session = Depends(get_db)):
     }
 
 
+@router.put("/{order_id}/complete")
+def complete_intransit(order_id: int, db: Session = Depends(get_db)):
+    """将在途订单标记为已完成"""
+    order = db.query(IntransitOrder).filter(IntransitOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="在途订单不存在")
+    if order.status != "pending":
+        raise HTTPException(status_code=400, detail="只能完成待处理的订单")
+    order.status = "completed"
+    db.commit()
+    return {"message": "已完成"}
+
+
 @router.put("/{order_id}/cancel")
 def cancel_intransit(order_id: int, db: Session = Depends(get_db)):
     order = db.query(IntransitOrder).filter(IntransitOrder.id == order_id).first()
@@ -204,17 +193,5 @@ def cancel_intransit(order_id: int, db: Session = Depends(get_db)):
     if order.status != "pending":
         raise HTTPException(status_code=400, detail="只能作废待处理的订单")
     order.status = "cancelled"
-    # 扣回库存
-    if order.inbound_record_id:
-        rec = db.query(InboundRecord).filter(
-            InboundRecord.id == order.inbound_record_id
-        ).first()
-        if rec:
-            stock = db.query(Stock).filter(
-                Stock.warehouse_id == rec.warehouse_id,
-                Stock.goods_id == rec.goods_id,
-            ).first()
-            if stock:
-                stock.quantity -= rec.quantity
     db.commit()
     return {"message": "已作废"}

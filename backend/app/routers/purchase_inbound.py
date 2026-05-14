@@ -10,6 +10,7 @@ from app.models.purchase_inbound import PurchaseInbound
 from app.models.goods import Goods
 from app.models.stock import Stock
 from app.models.inbound import InboundRecord
+from app.models.intransit_order import IntransitOrder
 from app.models.user import User
 from app.routers.auth import get_current_user
 
@@ -24,23 +25,31 @@ class PurchaseCreate(BaseModel):
     remark: Optional[str] = None
 
 
-@router.post("/")
-def create_purchase(
-    data: PurchaseCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """记录一次采购入库，同时增加库存"""
+class BatchItem(BaseModel):
+    goods_id: int
+    received_quantity: int
+    bojun_order_no: str = ""
+    remark: Optional[str] = None
+
+
+class BatchCreate(BaseModel):
+    warehouse_id: int
+    items: List[BatchItem]
+    intransit_order_id: Optional[int] = None
+
+
+def _do_create(data, db, operator):
+    """创建一条采购入库记录 + 更新库存 + 写入入库记录"""
     record = PurchaseInbound(
         bojun_order_no=data.bojun_order_no,
+        warehouse_id=data.warehouse_id,
         goods_id=data.goods_id,
         received_quantity=data.received_quantity,
-        operator=current_user.display_name,
+        operator=operator,
         remark=data.remark,
     )
     db.add(record)
 
-    # 同步增加库存
     stock = db.query(Stock).filter(
         Stock.warehouse_id == data.warehouse_id,
         Stock.goods_id == data.goods_id,
@@ -55,20 +64,65 @@ def create_purchase(
         )
         db.add(stock)
 
-    # 写入入库记录
     inbound_rec = InboundRecord(
         warehouse_id=data.warehouse_id,
         goods_id=data.goods_id,
         quantity=data.received_quantity,
         boniu_order_no=data.bojun_order_no,
-        operator=current_user.display_name,
+        operator=operator,
         remark=data.remark,
     )
     db.add(inbound_rec)
+    return record
 
+
+@router.post("/")
+def create_purchase(
+    data: PurchaseCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """记录一次采购入库，同时增加库存"""
+    record = _do_create(data, db, current_user.display_name)
     db.commit()
     db.refresh(record)
     return record
+
+
+@router.post("/batch")
+def batch_create_purchase(
+    data: BatchCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """批量记录采购入库（同一仓库，每条记录独立伯俊单号）"""
+    records = []
+    for item in data.items:
+        if not item.bojun_order_no:
+            raise HTTPException(status_code=400, detail=f"第{len(records)+1}行缺少伯俊单号")
+        wrapper = PurchaseCreate(
+            bojun_order_no=item.bojun_order_no,
+            goods_id=item.goods_id,
+            received_quantity=item.received_quantity,
+            warehouse_id=data.warehouse_id,
+            remark=item.remark,
+        )
+        rec = _do_create(wrapper, db, current_user.display_name)
+        records.append(rec)
+    # 如果关联了在途订单，自动标记为已完成（同一事务）
+    if data.intransit_order_id:
+        order = db.query(IntransitOrder).filter(
+            IntransitOrder.id == data.intransit_order_id,
+            IntransitOrder.status == "pending",
+        ).first()
+        if order:
+            order.status = "completed"
+
+    db.commit()
+    for r in records:
+        db.refresh(r)
+
+    return {"message": f"批量入库完成，共{len(records)}项", "count": len(records)}
 
 
 @router.get("/")
@@ -89,6 +143,7 @@ def list_purchases(
         result.append({
             "id": r.id,
             "bojun_order_no": r.bojun_order_no,
+            "warehouse_id": r.warehouse_id,
             "goods_id": r.goods_id,
             "goods_name": goods.name if goods else "",
             "goods_barcode": goods.barcode if goods else "",

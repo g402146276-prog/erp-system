@@ -2,7 +2,7 @@
   <div class="loc-container">
     <div class="loc-header">
       <h2>货位管理</h2>
-      <el-button type="primary" size="small" @click="showAdd = true">+ 新增货位</el-button>
+      <el-button type="primary" size="small" @click="openAdd">+ 新增货位</el-button>
     </div>
 
     <el-form :inline="true" :model="filterForm">
@@ -25,14 +25,14 @@
     <el-empty v-if="!loading && locations.length === 0" description="暂无货位" />
 
     <el-dialog v-model="showAdd" title="新增货位" width="90%" max-width="500px">
-      <el-form :model="addForm" label-width="80px">
-        <el-form-item label="所属仓库">
-          <el-select v-model="addForm.warehouse_id" style="width: 100%">
+      <el-form :model="addForm" :rules="formRules" ref="formRef" label-width="80px">
+        <el-form-item label="所属仓库" prop="warehouse_id">
+          <el-select v-model="addForm.warehouse_id" style="width: 100%" @change="autoFillCode">
             <el-option v-for="w in warehouses" :key="w.id" :label="w.name" :value="w.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="货位编码">
-          <el-input v-model="addForm.code" placeholder="如 A-01-03" />
+        <el-form-item label="货位编码" prop="code">
+          <el-input v-model="addForm.code" placeholder="选择仓库后自动生成" />
         </el-form-item>
         <el-form-item label="名称">
           <el-input v-model="addForm.name" placeholder="可选" />
@@ -48,6 +48,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { warehouseApi } from '../api/modules'
 import { locationApi } from '../api/modules_ext'
 
@@ -59,6 +60,38 @@ const warehouses = ref([])
 
 const filterForm = ref({ warehouse_id: '' })
 const addForm = ref({ warehouse_id: '', code: '', name: '' })
+const formRef = ref(null)
+const formRules = {
+  warehouse_id: [{ required: true, message: '请选择仓库', trigger: 'change' }],
+  code: [{ required: true, message: '请输入货位编码', trigger: 'blur' }]
+}
+
+async function autoFillCode() {
+  const wid = addForm.value.warehouse_id
+  if (!wid) return
+  try {
+    const list = await locationApi.list({ warehouse_id: wid })
+    // 提取数字编号，取最大值+1
+    let maxNum = 0
+    list.forEach(l => {
+      const m = (l.code || '').match(/(\d+)$/)
+      if (m) maxNum = Math.max(maxNum, parseInt(m[1]))
+    })
+    addForm.value.code = String(maxNum + 1).padStart(3, '0')
+  } catch {
+    addForm.value.code = '001'
+  }
+}
+
+function openAdd() {
+  addForm.value = { warehouse_id: '', code: '', name: '' }
+  // 默认选中第一个仓库
+  if (warehouses.value.length > 0) {
+    addForm.value.warehouse_id = warehouses.value[0].id
+    autoFillCode()
+  }
+  showAdd.value = true
+}
 
 const load = async () => {
   loading.value = true
@@ -72,10 +105,9 @@ const load = async () => {
 }
 
 const addLocation = async () => {
-  if (!addForm.value.warehouse_id || !addForm.value.code) {
-    ElMessage.warning('请填写仓库和货位编码')
-    return
-  }
+  if (!formRef.value) return
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
   saving.value = true
   try {
     await locationApi.create(addForm.value)

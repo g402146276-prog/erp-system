@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime, timezone
@@ -79,13 +80,13 @@ def create_adjustment(
     system_qty = stock.quantity
     diff_qty = req.actual_qty - system_qty
 
-    # 自动分析差异原因：查询当前借出、待取数量
-    borrowed = db.query(TransferRecord).filter(
+    # 自动分析差异原因：查询当前借出数量总和
+    borrowed = db.query(func.coalesce(func.sum(TransferRecord.quantity), 0)).filter(
         TransferRecord.goods_id == req.goods_id,
         TransferRecord.from_warehouse_id == req.warehouse_id,
-        TransferRecord.status.in_(["pending", "approved"]),
+        TransferRecord.status.in_(["pending", "approved", "completed"]),
         TransferRecord.transfer_type == "outbound",
-    ).count()
+    ).scalar()
 
     adjust = GoodsAdjustment(
         adjust_no=generate_adjust_no(db),

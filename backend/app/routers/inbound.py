@@ -1,11 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List
+from sqlalchemy import func
+from typing import List, Optional
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, date
 from app.database import get_db
 from app.models.inbound import InboundRecord
+from app.models.goods import Goods
 from app.models.stock import Stock
+from app.models.warehouse import Warehouse
 
 router = APIRouter(prefix="/api/inbound", tags=["入库管理"])
 
@@ -25,11 +28,11 @@ class InboundResponse(BaseModel):
     warehouse_id: int
     goods_id: int
     quantity: int
-    boniu_order_no: str = None
-    inbound_apply_id: int = None
-    operator: str = None
-    remark: str = None
-    created_at: datetime = None
+    boniu_order_no: Optional[str] = None
+    inbound_apply_id: Optional[int] = None
+    operator: Optional[str] = None
+    remark: Optional[str] = None
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -43,22 +46,67 @@ def update_stock(db: Session, warehouse_id: int, goods_id: int, quantity_change:
 
     if stock:
         stock.quantity += quantity_change
-    else:
+    elif quantity_change > 0:
         stock = Stock(warehouse_id=warehouse_id, goods_id=goods_id, quantity=quantity_change)
         db.add(stock)
+    # 如果 quantity_change <= 0 且无库存记录，直接忽略（不创建负值记录）
 
-    db.commit()
 
+@router.get("/")
+def list_inbounds(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    warehouse_id: Optional[int] = None,
+    goods_id: Optional[int] = None,
+    bojun_order_no: Optional[str] = None,
+    operator: Optional[str] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    keyword: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    query = db.query(
+        InboundRecord,
+        Goods.name.label("goods_name"),
+        Goods.barcode.label("goods_barcode"),
+        Warehouse.name.label("warehouse_name"),
+    ).outerjoin(Goods, InboundRecord.goods_id == Goods.id
+    ).outerjoin(Warehouse, InboundRecord.warehouse_id == Warehouse.id)
 
-@router.get("/", response_model=List[InboundResponse])
-def list_inbounds(skip: int = 0, limit: int = 100, warehouse_id: int = None, goods_id: int = None, db: Session = Depends(get_db)):
-    query = db.query(InboundRecord)
     if warehouse_id:
         query = query.filter(InboundRecord.warehouse_id == warehouse_id)
     if goods_id:
         query = query.filter(InboundRecord.goods_id == goods_id)
-    inbounds = query.order_by(InboundRecord.created_at.desc()).offset(skip).limit(limit).all()
-    return inbounds
+    if bojun_order_no:
+        query = query.filter(InboundRecord.boniu_order_no.like(f"%{bojun_order_no}%"))
+    if operator:
+        query = query.filter(InboundRecord.operator.like(f"%{operator}%"))
+    if date_from:
+        query = query.filter(func.date(InboundRecord.created_at) >= date_from)
+    if date_to:
+        query = query.filter(func.date(InboundRecord.created_at) <= date_to)
+    if keyword:
+        query = query.filter(
+            Goods.barcode.like(f"%{keyword}%") | Goods.name.like(f"%{keyword}%")
+        )
+
+    rows = query.order_by(InboundRecord.created_at.desc()).offset(skip).limit(limit).all()
+    result = []
+    for rec, goods_name, goods_barcode, warehouse_name in rows:
+        result.append({
+            "id": rec.id,
+            "warehouse_id": rec.warehouse_id,
+            "warehouse_name": warehouse_name or "",
+            "goods_id": rec.goods_id,
+            "goods_name": goods_name or "",
+            "goods_barcode": goods_barcode or "",
+            "quantity": rec.quantity,
+            "boniu_order_no": rec.boniu_order_no or "",
+            "operator": rec.operator or "",
+            "remark": rec.remark or "",
+            "created_at": rec.created_at,
+        })
+    return result
 
 
 @router.get("/{inbound_id}", response_model=InboundResponse)

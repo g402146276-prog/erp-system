@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 from app.database import get_db
@@ -36,39 +36,32 @@ class TransferResponse(BaseModel):
     transfer_type: str
     from_warehouse_id: int
     to_warehouse_id: int
-    from_person_id: int = None
-    to_person_id: int = None
+    from_person_id: Optional[int] = None
+    to_person_id: Optional[int] = None
     goods_id: int
     quantity: int
-    sales_tag: str = None
+    sales_tag: Optional[str] = None
     status: str
-    remark: str = None
-    operator: str = None
-    approved_by: str = None
-    created_at: datetime = None
+    remark: Optional[str] = None
+    operator: Optional[str] = None
+    approved_by: Optional[str] = None
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
-def generate_transfer_no():
+def generate_transfer_no(db: Session = None):
     now = datetime.now()
-    return f"DB{now.strftime('%Y%m%d%H%M%S')}"
-
-
-def update_stock(db: Session, warehouse_id: int, goods_id: int, quantity_change: int):
-    stock = db.query(Stock).filter(
-        Stock.warehouse_id == warehouse_id,
-        Stock.goods_id == goods_id
-    ).first()
-
-    if stock:
-        stock.quantity += quantity_change
-    else:
-        stock = Stock(warehouse_id=warehouse_id, goods_id=goods_id, quantity=quantity_change)
-        db.add(stock)
-
-    db.commit()
+    ts = now.strftime('%Y%m%d%H%M%S')
+    if db:
+        last = db.query(TransferRecord).filter(
+            TransferRecord.transfer_no.like(f"DB{ts}%")
+        ).order_by(TransferRecord.id.desc()).first()
+        if last:
+            seq = int(last.transfer_no[-3:]) + 1
+            return f"DB{ts}{seq:03d}"
+    return f"DB{ts}000"
 
 
 @router.get("/", response_model=List[TransferResponse])
@@ -93,7 +86,7 @@ def get_transfer(transfer_id: int, db: Session = Depends(get_db)):
 @router.post("/", response_model=TransferResponse)
 def create_transfer(transfer_data: TransferCreate, db: Session = Depends(get_db)):
     transfer = TransferRecord(
-        transfer_no=generate_transfer_no(),
+        transfer_no=generate_transfer_no(db),
         **transfer_data.model_dump()
     )
     db.add(transfer)
@@ -115,11 +108,29 @@ def approve_transfer(transfer_id: int, approved_by: str = None, db: Session = De
     transfer.approved_by = approved_by
     transfer.approved_at = datetime.now()
 
-    db.commit()
-    db.refresh(transfer)
+    # 扣减源仓库存
+    src_stock = db.query(Stock).filter(
+        Stock.warehouse_id == transfer.from_warehouse_id,
+        Stock.goods_id == transfer.goods_id,
+    ).first()
+    if not src_stock or src_stock.quantity < transfer.quantity:
+        raise HTTPException(status_code=400, detail=f"源仓库库存不足，当前库存: {src_stock.quantity if src_stock else 0}")
+    src_stock.quantity -= transfer.quantity
 
-    update_stock(db, transfer.from_warehouse_id, transfer.goods_id, -transfer.quantity)
-    update_stock(db, transfer.to_warehouse_id, transfer.goods_id, transfer.quantity)
+    # 增加目标仓库库存
+    dst_stock = db.query(Stock).filter(
+        Stock.warehouse_id == transfer.to_warehouse_id,
+        Stock.goods_id == transfer.goods_id,
+    ).first()
+    if dst_stock:
+        dst_stock.quantity += transfer.quantity
+    else:
+        dst_stock = Stock(
+            warehouse_id=transfer.to_warehouse_id,
+            goods_id=transfer.goods_id,
+            quantity=transfer.quantity,
+        )
+        db.add(dst_stock)
 
     transfer.status = "completed"
     db.commit()
@@ -136,6 +147,29 @@ def reverse_transfer(transfer_id: int, reversed_remark: str = None, db: Session 
 
     if transfer.status == "reversed":
         raise HTTPException(status_code=400, detail="该单据已被红冲")
+
+    # 恢复源仓库库存
+    src_stock = db.query(Stock).filter(
+        Stock.warehouse_id == transfer.from_warehouse_id,
+        Stock.goods_id == transfer.goods_id,
+    ).first()
+    if src_stock:
+        src_stock.quantity += transfer.quantity
+    else:
+        src_stock = Stock(
+            warehouse_id=transfer.from_warehouse_id,
+            goods_id=transfer.goods_id,
+            quantity=transfer.quantity,
+        )
+        db.add(src_stock)
+
+    # 扣减目标仓库库存
+    dst_stock = db.query(Stock).filter(
+        Stock.warehouse_id == transfer.to_warehouse_id,
+        Stock.goods_id == transfer.goods_id,
+    ).first()
+    if dst_stock:
+        dst_stock.quantity -= transfer.quantity
 
     transfer.status = "reversed"
     transfer.reversed_remark = reversed_remark

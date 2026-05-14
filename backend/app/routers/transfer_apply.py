@@ -178,7 +178,7 @@ def approve_apply(
 
     if data.approve:
         # 检查库存是否足够
-        if apply.transfer_type == "move":
+        if apply.transfer_type in ("move", "borrow", "damage"):
             stock = db.query(Stock).filter(
                 Stock.warehouse_id == apply.source_warehouse_id,
                 Stock.goods_id == apply.goods_id,
@@ -250,6 +250,34 @@ def cancel_apply(apply_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="调拨申请不存在")
     if apply.status in ("completed", "cancelled", "rejected"):
         raise HTTPException(status_code=400, detail="当前状态不可作废")
+
+    # 如果已审批通过，需要恢复库存
+    if apply.status == "approved":
+        if apply.transfer_type == "move":
+            # 恢复源仓库库存
+            src_stock = db.query(Stock).filter(
+                Stock.warehouse_id == apply.source_warehouse_id,
+                Stock.goods_id == apply.goods_id,
+            ).first()
+            if src_stock:
+                src_stock.quantity += apply.quantity
+            # 扣减目标仓库库存
+            dst_stock = db.query(Stock).filter(
+                Stock.warehouse_id == apply.dest_warehouse_id,
+                Stock.goods_id == apply.goods_id,
+            ).first()
+            if dst_stock:
+                dst_stock.quantity = max(0, dst_stock.quantity - apply.quantity)
+
+        if apply.transfer_type in ("borrow", "damage"):
+            # 归还源仓库库存
+            src_stock = db.query(Stock).filter(
+                Stock.warehouse_id == apply.source_warehouse_id,
+                Stock.goods_id == apply.goods_id,
+            ).first()
+            if src_stock:
+                src_stock.quantity += apply.quantity
+
     apply.status = "cancelled"
     db.commit()
     return apply
