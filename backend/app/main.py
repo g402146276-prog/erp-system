@@ -27,20 +27,17 @@ app.add_middleware(
 # ===== 生产模式：提供前端静态文件 =====
 import os
 frontend_dist = os.path.join(os.path.dirname(__file__), "../../frontend/dist")
+if os.path.isdir(frontend_dist):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
 
 @app.middleware("http")
 async def add_charset_and_spa(request, call_next):
     # 生产模式下，非API请求返回前端页面
-    if os.path.isdir(frontend_dist):
-        path = request.url.path
-        if path.startswith("/assets/"):
-            from fastapi.staticfiles import StaticFiles
-            static = StaticFiles(directory=os.path.join(frontend_dist, "assets"))
-            return await static(request, call_next)
-        if not path.startswith("/api/") and not path.startswith("/docs") and not path.startswith("/openapi"):
-            index_path = os.path.join(frontend_dist, "index.html")
-            if os.path.isfile(index_path):
-                return FileResponse(index_path)
+    path = request.url.path
+    if os.path.isdir(frontend_dist) and not path.startswith("/api/") and not path.startswith("/docs") and not path.startswith("/openapi") and not path.startswith("/assets"):
+        index_path = os.path.join(frontend_dist, "index.html")
+        if os.path.isfile(index_path):
+            return FileResponse(index_path)
 
     response = await call_next(request)
     ct = response.headers.get("content-type", "")
