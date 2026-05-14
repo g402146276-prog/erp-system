@@ -68,6 +68,7 @@
         :on-success="importSuccess"
         :on-error="importError"
         :before-upload="beforeUpload"
+        :data="{ encoding: 'auto' }"
       >
         <el-icon class="el-icon--upload"><upload-filled /></el-icon>
         <div class="el-upload__text">拖拽文件到此处或 <em>点击上传</em></div>
@@ -165,8 +166,9 @@ function importSuccess() {
   load()
 }
 
-function importError() {
-  ElMessage.error('导入失败')
+function importError(err) {
+  const detail = err?.response?.data?.detail || err?.message || '未知错误'
+  ElMessage.error('导入失败: ' + detail)
 }
 
 function downloadTemplate() {

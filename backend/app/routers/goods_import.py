@@ -72,9 +72,13 @@ async def upload_goods_file(
     db.refresh(record)
     
     try:
-        # 读取CSV文件
+        # 读取CSV文件（自动识别编码）
         contents = await file.read()
-        csv_file = io.StringIO(contents.decode('utf-8'))
+        try:
+            raw = contents.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            raw = contents.decode('gbk', errors='replace')
+        csv_file = io.StringIO(raw)
         reader = csv.DictReader(csv_file)
         
         total_count = 0
